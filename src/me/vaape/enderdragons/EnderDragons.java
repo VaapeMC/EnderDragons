@@ -191,7 +191,9 @@ public class EnderDragons extends JavaPlugin implements Listener{
 		if (event.getEntity() instanceof EnderDragon) {
 			Location location = event.getEntity().getLocation().add(0, 5, 0);
 			Block block = location.getBlock();
+			Block block2 = location.clone().add(0, 3, 0).getBlock();
 			block.setType(Material.DRAGON_EGG);
+			block2.setType(Material.DRAGON_EGG);
 			double random = Math.random();
 			Bukkit.getWorld("world_the_end").dropItemNaturally(location, new ItemStack(Material.COAL, (int) (1*random) + 1));
 			Bukkit.getWorld("world_the_end").dropItemNaturally(location, new ItemStack(Material.CHARCOAL,  (int) (2*random) + 1));
@@ -243,25 +245,13 @@ public class EnderDragons extends JavaPlugin implements Listener{
 			
 			Random randomizer = new Random();
 			
-			if (day == Calendar.SUNDAY || day == Calendar.SATURDAY) {
-				
-				int hours = 6 + randomizer.nextInt(4); //Between 6 and 10 hours
-				
-				setSpawnableTrue(20 * 60 * 60 * hours);
-				
-				Date timeToAllowSpawning = addHoursToJavaUtilDate(new Date(), hours);
-				config.set("time to allow spawning", timeToAllowSpawning);
-				saveConfig();
-			}
-			else {
-				int hours = 6 + randomizer.nextInt(4); //Between 6 and 10 hours
-				
-				setSpawnableTrue(20 * 60 * 60 * hours);
-				
-				Date timeToAllowSpawning = addHoursToJavaUtilDate(new Date(), hours);
-				config.set("time to allow spawning", timeToAllowSpawning);
-				saveConfig();
-			}
+			int hours = 1; // + randomizer.nextInt(1); //Between 1 and 2 hours
+			
+			setSpawnableTrue(20 * 60 * 60 * hours);
+			
+			Date timeToAllowSpawning = addHoursToJavaUtilDate(new Date(), hours);
+			config.set("time to allow spawning", timeToAllowSpawning);
+			saveConfig();
 		}
 	}
 	
