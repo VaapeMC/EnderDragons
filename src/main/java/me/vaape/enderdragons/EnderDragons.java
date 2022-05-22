@@ -27,14 +27,16 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class EnderDragons extends JavaPlugin implements Listener {
     public static EnderDragons plugin;
     private final FileConfiguration config = this.getConfig();
 
     public boolean allowSpawn = false;
+    public long timeToAllowSpawningInMillis ;
 
-    private BukkitTask repeatingSpawnTimer;
+    private List<BukkitTask> repeatingSpawnTimers = new ArrayList<>();
 
     Calendar calendar = Calendar.getInstance();
 
@@ -42,7 +44,7 @@ public class EnderDragons extends JavaPlugin implements Listener {
     //How the plugin works:
     //If a player spawns the enderdragon with crystals, if allowSpawn = false, the dragon will be .removed() 1 tick
     // after spawn
-    //This will create a timer that loops every 5 minutes that will attempt to respawn the dragon
+    //This will create a timer that loops every 60 seconds that will attempt to respawn the dragon
     //When the dragon spawns, this timer is cancelled()
     //When the server restarts, the respawn timer is stopped, but a player can activate it again by trying to spawn
     // the enderdragon with crystals
@@ -52,7 +54,7 @@ public class EnderDragons extends JavaPlugin implements Listener {
     public void onEnable() {
         plugin = this;
         loadConfiguration();
-        getLogger().info(ChatColor.GREEN + "EnderDragons has been enabled!");
+        getServer().getConsoleSender().sendMessage(ChatColor.GREEN + "EnderDragons has been enabled!");
         getServer().getPluginManager().registerEvents(this, this);
         saveConfig();
 
@@ -61,7 +63,7 @@ public class EnderDragons extends JavaPlugin implements Listener {
         }
 
         Date timeToAllowSpawning = (Date) config.get("time to allow spawning");
-        long timeToAllowSpawningInMillis = timeToAllowSpawning.getTime();
+        timeToAllowSpawningInMillis = timeToAllowSpawning.getTime();
         Date now = new Date();
         long nowInMillis = now.getTime();
 
@@ -72,9 +74,9 @@ public class EnderDragons extends JavaPlugin implements Listener {
             //Create the timer to allow spawning saved by config
             long timeUntilSpawnInMillis = timeToAllowSpawningInMillis - nowInMillis; //Get the difference in
             // milliseconds from now until when it should spawn
-            long timeUntilSpawnInSeconds = timeUntilSpawnInMillis / 1000;
+            int timeUntilSpawnInSeconds = (int) (timeUntilSpawnInMillis / 1000);
 
-            setSpawnableTrue((int) timeUntilSpawnInSeconds * 20);
+            setSpawnableTrue(timeUntilSpawnInSeconds * 20);
         }
     }
 
@@ -131,9 +133,9 @@ public class EnderDragons extends JavaPlugin implements Listener {
                             drag.setHealth(drag.getHealth() * 3);
                         }
                         allowSpawn = false;
-                        if (repeatingSpawnTimer != null) {
-                            repeatingSpawnTimer.cancel();
-                        }
+
+                        if (repeatingSpawnTimers == null) return;
+                        cancelTimers();
                     }
                 }, 1);
             } else {
@@ -149,18 +151,24 @@ public class EnderDragons extends JavaPlugin implements Listener {
                 }.runTaskLater(plugin, 1); //1 tick after spawn
 
                 for (Player player : Bukkit.getServer().getOnlinePlayers()) {
-                    if (player.getWorld() == Bukkit.getServer().getWorld("world_the_end")) {
-                        player.sendMessage(ChatColor.RED + "No dragons can be summoned right now right now...");
+                    if (isInEndMainIsland(player.getLocation())) {
+                        player.sendMessage(ChatColor.DARK_PURPLE + "No dragons can be summoned for " +
+                                ChatColor.GRAY + String.format("%d hours and %d minutes",
+                                TimeUnit.MILLISECONDS.toHours(getMillisUntilTime(timeToAllowSpawningInMillis)),
+                                TimeUnit.MILLISECONDS.toMinutes(getMillisUntilTime(timeToAllowSpawningInMillis)) - TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(getMillisUntilTime(timeToAllowSpawningInMillis))))
+                                + ChatColor.DARK_PURPLE + ".");
                     }
                 }
 
-                repeatingSpawnTimer = new BukkitRunnable() {
+                if (repeatingSpawnTimers != null) cancelTimers();
+
+                repeatingSpawnTimers.add(new BukkitRunnable() {
 
                     @Override
                     public void run() {
                         spawnDragon();
                     }
-                }.runTaskLater(plugin, 20 * 30); //Every 30 seconds this will loop through
+                }.runTaskLater(plugin, 20 * 30)); //Every 30 seconds this will loop through
             }
         }
     }
@@ -235,13 +243,14 @@ public class EnderDragons extends JavaPlugin implements Listener {
 
             Random randomizer = new Random();
 
-            int hours = 1; // + randomizer.nextInt(1); //Between 1 and 2 hours
+            int minutes = 120 + randomizer.nextInt(60); //Between 2 and 3 hours
 
-            setSpawnableTrue(20 * 60 * 60 * hours);
+            setSpawnableTrue(20 * 60 * minutes);
 
-            Date timeToAllowSpawning = addHoursToJavaUtilDate(new Date(), hours);
+            Date timeToAllowSpawning = addMinutesToJavaUtilDate(new Date(), minutes);
             config.set("time to allow spawning", timeToAllowSpawning);
             saveConfig();
+            timeToAllowSpawningInMillis = timeToAllowSpawning.getTime();
         }
     }
 
@@ -354,15 +363,42 @@ public class EnderDragons extends JavaPlugin implements Listener {
             saveConfig();
             for (Player player : Bukkit.getServer().getOnlinePlayers()) {
                 player.playSound(player.getLocation(), Sound.BLOCK_END_PORTAL_SPAWN, 2f, 0.1f);
-                player.sendMessage(ChatColor.DARK_PURPLE + "A dragon can be summoned from the void...");
             }
+            Bukkit.getServer().broadcastMessage(ChatColor.DARK_PURPLE + "A dragon can be summoned from the void...");
         }, ticks);
     }
 
-    public Date addHoursToJavaUtilDate(Date date, int hours) {
+    public void cancelTimers() {
+        for (BukkitTask task : repeatingSpawnTimers) {
+            if (task != null) {
+                task.cancel();
+            }
+        }
+    }
+
+    public int getMillisUntilTime(long timeInFutureInMillis) {
+        Date now = new Date();
+        long nowInMillis = now.getTime();
+
+        if (timeInFutureInMillis <= nowInMillis) { //True if time is in the past
+            return 0;
+        } else {
+
+            return (int) (timeInFutureInMillis - nowInMillis);
+        }
+    }
+
+    public boolean isInEndMainIsland(Location location) {
+        int x = location.getBlockX();
+        int z = location.getBlockZ();
+        if (Bukkit.getServer().getWorld("world_the_end") != location.getWorld()) return false;
+        return x > -100 && x < 100 && z > -100 && z < 100;
+    }
+
+    public Date addMinutesToJavaUtilDate(Date date, int minutes) {
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(date);
-        calendar.add(Calendar.HOUR_OF_DAY, hours);
+        calendar.add(Calendar.MINUTE, minutes);
         return calendar.getTime();
     }
 }
